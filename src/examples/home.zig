@@ -1,8 +1,8 @@
 const std = @import("std");
 const debug = std.debug;
-const lazy = @import("lazy").lazy;
+const constLazy = @import("lazy").constLazy;
 
-const getHome = lazy(struct {
+const getHome = constLazy(struct {
     fn f() []const u8 {
         return std.os.getenv("HOME").?;
     }

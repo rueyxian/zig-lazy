@@ -37,13 +37,16 @@ const testHome = constLazy(struct {
 }.f);
 
 test "home" {
-    try testing.expectEqual(@TypeOf(testHome().*), []const u8);
+    try testing.expectEqual(@TypeOf(testHome()), *const []const u8);
     try testing.expectEqualSlices(u8, testHome().*, std.os.getenv("HOME").?);
 }
 
 const testList = lazy(struct {
     fn f() std.ArrayList(u32) {
-        return std.ArrayList(u32).initCapacity(std.heap.page_allocator, 4) catch unreachable;
+        var list = std.ArrayList(u32).initCapacity(std.heap.page_allocator, 6) catch unreachable;
+        list.appendAssumeCapacity(1);
+        list.appendAssumeCapacity(2);
+        return list;
     }
 }.f);
 
@@ -52,11 +55,13 @@ fn testAppend(n: u32) void {
 }
 
 test "list" {
-    try testing.expectEqual(@TypeOf(testList().*), std.ArrayList(u32));
-    testList().appendAssumeCapacity(1);
-    testAppend(2);
+    try testing.expectEqual(@TypeOf(testList()), *std.ArrayList(u32));
     testList().appendAssumeCapacity(3);
     testAppend(4);
+    testList().appendAssumeCapacity(5);
+    testAppend(6);
+    try testing.expectEqual(testList().popOrNull(), 6);
+    try testing.expectEqual(testList().popOrNull(), 5);
     try testing.expectEqual(testList().popOrNull(), 4);
     try testing.expectEqual(testList().popOrNull(), 3);
     try testing.expectEqual(testList().popOrNull(), 2);
@@ -65,16 +70,34 @@ test "list" {
 }
 
 const testNum = lazy(struct {
-    fn f() u32 {
-        return 42;
+    fn f() u64 {
+        return @as(u64, @intCast(std.time.timestamp())) % 10000;
     }
 }.f);
 
-test "num" {
-    try testing.expectEqual(@TypeOf(testNum().*), u32);
-    try testing.expectEqual(testNum().*, 42);
-    testNum().* += 1;
-    try testing.expectEqual(testNum().*, 43);
-    testNum().* = 77;
-    try testing.expectEqual(testNum().*, 77);
+test "threaded" {
+    const Thread = std.Thread;
+    const Mutex = Thread.Mutex;
+    const start = testNum().*;
+    const thread_count: usize = 4;
+    const loop_count: usize = 10000;
+    const Context = struct {
+        mutex: Mutex = .{},
+        fn run(ctx: *@This()) void {
+            for (0..loop_count) |_| {
+                ctx.mutex.lock();
+                defer ctx.mutex.unlock();
+                testNum().* += 1;
+            }
+        }
+    };
+    var ctx = Context{};
+    var threads: [thread_count]Thread = undefined;
+    for (0..thread_count) |i| {
+        threads[i] = try Thread.spawn(.{}, Context.run, .{&ctx});
+    }
+    for (&threads) |thread| {
+        thread.join();
+    }
+    try testing.expectEqual(testNum().*, start + (thread_count * loop_count));
 }

@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) !void {
     }{
         .{ .name = "home", .path = "src/examples/home.zig" },
         .{ .name = "list", .path = "src/examples/list.zig" },
+        .{ .name = "threaded", .path = "src/examples/threaded.zig" },
     }) |opt| {
         const step_run = blk: {
             const name = try fmt.allocPrint(b.allocator, "example_{s}", .{opt.name});
