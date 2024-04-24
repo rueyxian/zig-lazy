@@ -7,11 +7,16 @@ A lazy initialization Zig library.
 [Lazy initialization](https://en.wikipedia.org/wiki/Lazy_initialization) not only mitigates program start-up overhead by deferring the initialization process until needed, thus improving performance, but it also resolves data dependency issues, such as reading data from files that cannot be accomplished at compile time.
 
 ## Features
+This library provides a function, `lazy`, which accepts two arguments: 
 
-This library provides two functions, `lazy` and `constLazy`:
+- `const_ptr` of type `bool`; 
+- `init_fn` of type of `fn () T`.
 
-- Passing functions of type `fn () T` into `lazy` returns `*T`.
-- Passing functions of type `fn () T` into `constLazy` returns `*const T`.
+
+For the the argument `const_ptr`:
+
+- Passing `false` returns `*T`;
+- Passing `true` returns `*const T`.
 
 Lazy initialization is often used in conjunction with multithreading. To avoid unnecessary abstraction, however, the invocations of these two functions aren't thread-safe. Users are accountable for handling race conditions on their own.
 
@@ -63,7 +68,7 @@ const std = @import("std");
 const debug = std.debug;
 const lazy = @import("lazy").lazy;
 
-const getHome = lazy(struct {
+const getHome = lazy(true, struct {
     fn f() []const u8 {
         return std.os.getenv("HOME").?;
     }
@@ -72,7 +77,6 @@ const getHome = lazy(struct {
 pub fn main() !void {
     debug.print("home: {s}\n", .{getHome().*});
 }
-
 ```
 Output:
 
@@ -88,7 +92,7 @@ const std = @import("std");
 const debug = std.debug;
 const lazy = @import("lazy").lazy;
 
-const getList = lazy(struct {
+const getList = lazy(false, struct {
     fn f() std.ArrayList(u32) {
         var list = std.ArrayList(u32).initCapacity(std.heap.page_allocator, 6) catch unreachable;
         list.appendAssumeCapacity(1);
@@ -134,7 +138,7 @@ const debug = std.debug;
 const Thread = std.Thread;
 const lazy = @import("lazy").lazy;
 
-const getNum = lazy(struct {
+const getNum = lazy(false, struct {
     fn f() u64 {
         return @as(u64, @intCast(std.time.timestamp())) % 10000;
     }

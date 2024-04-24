@@ -1,36 +1,46 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const testing = std.testing;
 
-fn ReturnType(comptime lazy_fn: anytype) type {
-    const LazyFn = @TypeOf(lazy_fn);
-    const info = @typeInfo(LazyFn);
+fn Data(comptime init_fn: anytype) type {
+    const InitFn = @TypeOf(init_fn);
+    const info = @typeInfo(InitFn);
     if (info != .Fn) {
-        @compileError("`lazy_fn` must be a function, cannot use `" ++ @typeName(LazyFn) ++ "`.");
+        @compileError("`init_fn` must be a function, cannot use `" ++ @typeName(InitFn) ++ "`.");
     }
     if (info.Fn.params.len != 0) {
-        @compileError("`lazy_fn` must be a function of type `fn () T`.");
+        @compileError("`init_fn` must be a function of type `fn () T`.");
     }
     return info.Fn.return_type.?;
 }
 
-pub fn lazy(comptime lazy_fn: anytype) fn () *ReturnType(lazy_fn) {
+fn LazyFn(comptime init_fn: anytype, comptime const_ptr: bool) type {
+    if (const_ptr) {
+        return fn () *const Data(init_fn);
+    }
+    return fn () *Data(init_fn);
+}
+
+pub fn lazy(const_ptr: bool, comptime init_fn: anytype) LazyFn(init_fn, const_ptr) {
     return struct {
-        var data: ?Data = undefined;
-        const Data = ReturnType(lazy_fn);
-        pub fn ptr() *Data {
-            return &(data orelse data: {
-                data = lazy_fn();
-                break :data data.?;
-            });
+        var done: bool = false;
+        var data: Data(init_fn) = undefined;
+        pub fn ptr() *Data(init_fn) {
+            if (done == false) {
+                initSlow(init_fn, &done, &data);
+            }
+            return &data;
         }
     }.ptr;
 }
 
-pub fn constLazy(comptime lazy_fn: anytype) fn () *const ReturnType(lazy_fn) {
-    return lazy(lazy_fn);
+fn initSlow(comptime init_fn: anytype, done: *bool, data: *Data(init_fn)) void {
+    @setCold(true);
+    data.* = init_fn();
+    done.* = true;
 }
 
-const testHome = constLazy(struct {
+const testHome = lazy(true, struct {
     fn f() []const u8 {
         return std.os.getenv("HOME").?;
     }
@@ -41,7 +51,7 @@ test "home" {
     try testing.expectEqualSlices(u8, testHome().*, std.os.getenv("HOME").?);
 }
 
-const testList = lazy(struct {
+const testList = lazy(false, struct {
     fn f() std.ArrayList(u32) {
         var list = std.ArrayList(u32).initCapacity(std.heap.page_allocator, 6) catch unreachable;
         list.appendAssumeCapacity(1);
@@ -69,7 +79,7 @@ test "list" {
     try testing.expectEqual(testList().popOrNull(), null);
 }
 
-const testNum = lazy(struct {
+const testNum = lazy(false, struct {
     fn f() u64 {
         return @as(u64, @intCast(std.time.timestamp())) % 10000;
     }
@@ -77,9 +87,9 @@ const testNum = lazy(struct {
 
 test "threaded" {
     const Thread = std.Thread;
-    const Mutex = Thread.Mutex;
+    const Mutex = std.Thread.Mutex;
     const start = testNum().*;
-    const thread_count: usize = 4;
+    const thread_count: usize = 7;
     const loop_count: usize = 10000;
     const Context = struct {
         mutex: Mutex = .{},

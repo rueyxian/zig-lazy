@@ -3,7 +3,7 @@ const debug = std.debug;
 const Thread = std.Thread;
 const lazy = @import("lazy").lazy;
 
-const getNum = lazy(struct {
+const getNum = lazy(false, struct {
     fn f() u64 {
         return @as(u64, @intCast(std.time.timestamp())) % 10000;
     }

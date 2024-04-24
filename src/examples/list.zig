@@ -2,7 +2,7 @@ const std = @import("std");
 const debug = std.debug;
 const lazy = @import("lazy").lazy;
 
-const getList = lazy(struct {
+const getList = lazy(false, struct {
     fn f() std.ArrayList(u32) {
         var list = std.ArrayList(u32).initCapacity(std.heap.page_allocator, 6) catch unreachable;
         list.appendAssumeCapacity(1);
