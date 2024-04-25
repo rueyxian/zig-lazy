@@ -2,7 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const testing = std.testing;
 
-fn Data(comptime init_fn: anytype) type {
+fn ReturnType(comptime init_fn: anytype) type {
     const InitFn = @TypeOf(init_fn);
     const info = @typeInfo(InitFn);
     if (info != .Fn) {
@@ -14,33 +14,46 @@ fn Data(comptime init_fn: anytype) type {
     return info.Fn.return_type.?;
 }
 
-fn LazyFn(comptime init_fn: anytype, comptime const_ptr: bool) type {
-    if (const_ptr) {
-        return fn () *const Data(init_fn);
+pub fn Lazy(comptime T: type, comptime is_const: bool) type {
+    if (is_const) {
+        return fn () *const T;
     }
-    return fn () *Data(init_fn);
+    return fn () *T;
 }
 
-pub fn lazy(const_ptr: bool, comptime init_fn: anytype) LazyFn(init_fn, const_ptr) {
+pub fn autoLazy(comptime init_fn: anytype) Lazy(ReturnType(init_fn), false) {
+    return Static(ReturnType(init_fn), false, init_fn).ptr;
+}
+
+pub fn autoConstLazy(comptime init_fn: anytype) Lazy(ReturnType(init_fn), true) {
+    return Static(ReturnType(init_fn), true, init_fn).ptr;
+}
+
+pub fn lazy(comptime T: type, comptime is_const: bool, comptime init_fn: fn () T) Lazy(T, is_const) {
+    return Static(T, is_const, init_fn).ptr;
+}
+
+fn Static(comptime T: type, comptime is_const: bool, comptime init_fn: fn () T) type {
     return struct {
         var done: bool = false;
-        var data: Data(init_fn) = undefined;
-        pub fn ptr() *Data(init_fn) {
+        var value: T = undefined;
+        const Pointer = if (is_const) *const T else *T;
+        pub fn ptr() Pointer {
             if (done == false) {
-                initSlow(init_fn, &done, &data);
+                initSlow(T, init_fn, &done, &value);
             }
-            return &data;
+            return &value;
         }
-    }.ptr;
+    };
 }
 
-fn initSlow(comptime init_fn: anytype, done: *bool, data: *Data(init_fn)) void {
+fn initSlow(comptime T: type, comptime init_fn: fn () T, done: *bool, value: *T) void {
     @setCold(true);
-    data.* = init_fn();
+    value.* = init_fn();
     done.* = true;
 }
 
-const testHome = lazy(true, struct {
+const testHome = autoConstLazy(struct {
     fn f() []const u8 {
         return std.os.getenv("HOME").?;
     }
@@ -51,7 +64,7 @@ test "home" {
     try testing.expectEqualSlices(u8, testHome().*, std.os.getenv("HOME").?);
 }
 
-const testList = lazy(false, struct {
+const testList = lazy(std.ArrayList(u32), false, struct {
     fn f() std.ArrayList(u32) {
         var list = std.ArrayList(u32).initCapacity(std.heap.page_allocator, 6) catch unreachable;
         list.appendAssumeCapacity(1);
@@ -79,7 +92,7 @@ test "list" {
     try testing.expectEqual(testList().popOrNull(), null);
 }
 
-const testNum = lazy(false, struct {
+const testNum = autoLazy(struct {
     fn f() u64 {
         return @as(u64, @intCast(std.time.timestamp())) % 10000;
     }
